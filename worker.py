@@ -103,6 +103,7 @@ def main():
     # c.send_notification(c.notification_text)
     while True:
         c.check_workers()
+        c.check_payments()
         time.sleep(60 * 2)
 
 
