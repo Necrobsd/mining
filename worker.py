@@ -12,7 +12,7 @@ def get_json(params):
     r = requests.get(URL, params=params)
     if r.status_code == 200:
         print(r.content)
-        result = json.loads(r.content)
+        result = r.json()
         if 'error' not in result['result']:
             return result
 
@@ -21,7 +21,7 @@ def get_concurrency():
     URL = 'https://api.cryptonator.com/api/ticker/btc-rub'
     r = requests.get(URL)
     if r.status_code == 200:
-        data = json.loads(r.content)
+        data = r.json()
         concurrency = float(data['ticker']['price'])
         return concurrency
 
