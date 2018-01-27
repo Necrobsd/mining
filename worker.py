@@ -18,11 +18,12 @@ def get_json(params):
 
 
 def get_concurrency():
-    URL = 'https://api.cryptonator.com/api/ticker/btc-rub'
+    # URL = 'https://api.cryptonator.com/api/ticker/btc-rub'
+    URL = 'https://api.exmo.com/v1/ticker/'
     r = requests.get(URL)
     if r.status_code == 200:
         data = r.json()
-        concurrency = float(data['ticker']['price'])
+        concurrency = float(data['BTC_RUB']['last_trade'])
         return concurrency
 
 
