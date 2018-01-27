@@ -49,7 +49,7 @@ class NicehashClient:
                 balance_rub = balance_btc * concurrency
                 self.notification_text += 'Баланс кошелька: {:.2f} RUB\n'.format((balance_rub))
 
-    def check_workers(self):
+    def check_workers(self, send=False):
         params = {
             'method': 'stats.provider.workers',
             'addr': self.wallet
@@ -57,16 +57,18 @@ class NicehashClient:
         data = get_json(params)
         if data['result']['workers']:
             if not self.workers_status:
-                # self.notification_text += 'Статус воркеров: Все воркеры работают\n'
-                self.send_notification('Статус воркеров: Все воркеры работают\n')
+                self.notification_text += 'Статус воркеров: Все воркеры работают\n'
+                if send:
+                    self.send_notification()
             self.workers_status = True
         else:
             if self.workers_status:
-                # self.notification_text += 'Статус воркеров: Воркеры остановлены\n'
-                self.send_notification('Статус воркеров: Воркеры остановлены\n')
+                self.notification_text += 'Статус воркеров: Воркеры остановлены\n'
+                if send:
+                    self.send_notification()
             self.workers_status = False
 
-    def check_payments(self):
+    def check_payments(self, send=False):
         params = {
             'method': 'stats.provider',
             'addr': self.wallet
@@ -82,11 +84,11 @@ class NicehashClient:
                 # self.notification_text += 'Последняя выплата: {:.2f} от {}\n'.format(last_payment, last_payment_date)
                 unpaid_balance = sum([float(b['balance']) for b in data['result']['stats']]) * concurrency
                 self.notification_text += 'Невыплаченный баланс на текущий момент: {:.2f} RUB\n'.format(unpaid_balance)
-                self.send_notification(self.notification_text)
+                if send:
+                    self.send_notification()
 
-    def send_notification(self, text):
-        print(text)
-        msg = MIMEText(text)
+    def send_notification(self):
+        msg = MIMEText(self.notification_text)
         msg['Subject'] = Header(email_config['subject'], 'utf-8')
         server = smtplib.SMTP_SSL(host=email_config['host'], port=email_config['port'])
         server.login(email_config['login'], email_config['pass'])
@@ -97,13 +99,13 @@ class NicehashClient:
 
 def main():
     c = NicehashClient()
-    # c.get_balance()
-    # c.check_payments()
-    # c.check_workers()
-    # c.send_notification(c.notification_text)
+    c.get_balance()
+    c.check_payments()
+    c.check_workers()
+    c.send_notification()
     while True:
-        c.check_workers()
-        c.check_payments()
+        c.check_workers(send=True)
+        c.check_payments(send=True)
         time.sleep(60 * 2)
 
 
