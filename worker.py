@@ -78,9 +78,11 @@ class NicehashClient:
                 self.payments = data['result']['payments']
                 last_payment = float(self.payments[0]['amount']) * concurrency
                 last_payment_date = self.payments[0]['time']
-                self.notification_text += 'Последняя выплата: {:.2f} от {}\n'.format(last_payment, last_payment_date)
+                self.notification_text += 'Произведена новая выплата на кошелек: {:.2f} от {}\n'.format(last_payment, last_payment_date)
+                # self.notification_text += 'Последняя выплата: {:.2f} от {}\n'.format(last_payment, last_payment_date)
                 unpaid_balance = sum([float(b['balance']) for b in data['result']['stats']]) * concurrency
                 self.notification_text += 'Невыплаченный баланс на текущий момент: {:.2f} RUB\n'.format(unpaid_balance)
+                self.send_notification(self.notification_text)
 
     def send_notification(self, text):
         print(text)
