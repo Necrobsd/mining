@@ -1,4 +1,4 @@
-from conf import nicehash_config, email_config
+from conf import nicehash_config, email_config, telegram_config
 import requests
 import time
 import smtplib
@@ -8,13 +8,17 @@ import logging
 import socket
 import pytz
 from datetime import datetime
+from telegram.ext import Updater, CommandHandler
+from telegram.error import TelegramError
 
 
 logging.basicConfig(filename='worker.log', level=logging.INFO,
-                    format='[%(asctime)s]  %(message)s')
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 local_tz = pytz.timezone("Asia/Vladivostok")
 utc_tz = pytz.utc
 
+updater = Updater(token=telegram_config['api_token'])
+dispatcher = updater.dispatcher
 
 def get_json(params):
     URL = 'https://api.nicehash.com/api'
@@ -34,6 +38,13 @@ def get_concurrency():
         data = r.json()
         concurrency = float(data['BTC_RUB']['last_trade'])
         return concurrency
+
+
+def get_localtime(timestamp):
+    date_without_tz = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    date_utc = utc_tz.localize(date_without_tz, is_dst=None)
+    date_localtime = datetime.strftime(date_utc.astimezone(local_tz), '%d-%m-%Y %H:%M:%S')
+    return date_localtime
 
 
 class NicehashClient:
@@ -65,7 +76,8 @@ class NicehashClient:
             else:
                 self.notification_text += 'Баланс кошелька: {:.4f} BTC\n'.format(balance_btc)
 
-    def check_workers(self, send=False):
+    def check_workers(self):
+        logging.info('check_workers')
         params = {
             'method': 'stats.provider.workers',
             'addr': self.wallet
@@ -74,8 +86,7 @@ class NicehashClient:
         if data['result']['workers']:
             if not self.workers_status:
                 self.notification_text += 'Статус воркеров: Все воркеры работают\n'
-                if send:
-                    self.send_notification()
+                self.send_notification()
             self.workers_status = True
             self.workers_status_errors_count = 0
         else:
@@ -84,11 +95,11 @@ class NicehashClient:
             else:
                 if self.workers_status:
                     self.notification_text += 'Статус воркеров: Воркеры остановлены\n'
-                    if send:
-                        self.send_notification()
+                    self.send_notification()
                 self.workers_status = False
 
-    def check_payments(self, send=False):
+    def check_new_payments(self):
+        logging.info('check_payments')
         params = {
             'method': 'stats.provider',
             'addr': self.wallet
@@ -98,64 +109,113 @@ class NicehashClient:
             if self.payments != data['result']['payments']:
                 concurrency = get_concurrency()
                 self.payments = data['result']['payments']
-                last_payment_date_without_tz = datetime.strptime(self.payments[0]['time'], '%Y-%m-%d %H:%M:%S')
-                last_payment_date_utc = utc_tz.localize(last_payment_date_without_tz, is_dst=None)
-                last_payment_date = datetime.strftime(last_payment_date_utc.astimezone(local_tz), '%d-%m-%Y %H:%M:%S')
+                last_payment_date = get_localtime(self.payments[0]['time'])
                 if concurrency:
                     currency_name = 'RUB'
                 else:
                     concurrency = 1
                     currency_name = 'BTC'
                 last_payment = float(self.payments[0]['amount']) * concurrency
-                if send:
-                    self.notification_text += 'Произведена новая выплата на кошелек: ' \
-                                              '{:.4f} {} от {}\n'.format(last_payment,
-                                                                         currency_name,
-                                                                         last_payment_date)
-                else:
-                    self.notification_text += 'Последняя выплата: {:.4f} {} от' \
-                                              ' {}\n'.format(last_payment,
-                                                             currency_name,
-                                                             last_payment_date)
+                self.notification_text += 'Произведена новая выплата на кошелек: ' \
+                                          '{:.4f} {} от {}\n'.format(last_payment,
+                                                                     currency_name,
+                                                                     last_payment_date)
                 unpaid_balance = sum([float(b['balance'])
                                       for b in
                                       data['result']['stats']]) * concurrency
                 self.notification_text += 'Невыплаченный баланс на текущий момент: ' \
                                           '{:.4f} {}\n'.format(unpaid_balance,
                                                                currency_name)
-                if send:
-                    self.send_notification()
+                self.send_notification()
+
+    def get_last_payment(self):
+        logging.info('get_last_payment')
+        params = {
+            'method': 'stats.provider',
+            'addr': self.wallet
+        }
+        data = get_json(params)
+        if data:
+            concurrency = get_concurrency()
+            if concurrency:
+                currency_name = 'RUB'
+            else:
+                concurrency = 1
+                currency_name = 'BTC'
+            self.payments = data['result']['payments']
+            last_payment = float(self.payments[0]['amount']) * concurrency
+            last_payment_date = get_localtime(self.payments[0]['time'])
+            self.notification_text += 'Последняя выплата: {:.4f} {} от' \
+                                      ' {}\n'.format(last_payment,
+                                                     currency_name,
+                                                     last_payment_date)
+            unpaid_balance = sum([float(b['balance'])
+                                  for b in
+                                  data['result']['stats']]) * concurrency
+            self.notification_text += 'Невыплаченный баланс на текущий момент: ' \
+                                      '{:.4f} {}\n'.format(unpaid_balance,
+                                                           currency_name)
+            self.send_notification()
 
     def send_notification(self):
+        bot = dispatcher.bot
         logging.info('Отправка сообщения: {}'.format(self.notification_text))
-        msg = MIMEText(self.notification_text)
-        msg['Subject'] = Header(email_config['subject'], 'utf-8')
         try:
-            server = smtplib.SMTP_SSL(host=email_config['host'],
-                                      port=email_config['port'])
-            server.login(email_config['login'], email_config['pass'])
-            server.sendmail(from_addr=email_config['from_addr'],
-                            to_addrs=email_config['to_addr'],
-                            msg=msg.as_string())
-            server.quit()
-        except smtplib.SMTPRecipientsRefused as e:
-            logging.info('Ошибка отправки сообщения SMTPRecipientsRefused: {}'.format(e.recipients))
-        except (smtplib.SMTPException, socket.gaierror) as e:
+            bot.send_message(chat_id=telegram_config['my_telegram_id'], text=self.notification_text)
+        except (socket.error, TelegramError) as e:
             logging.info('Ошибка отправки сообщения: {}'.format(e))
+
+        # msg = MIMEText(self.notification_text)
+        # msg['Subject'] = Header(email_config['subject'], 'utf-8')
+        # try:
+        #     server = smtplib.SMTP_SSL(host=email_config['host'],
+        #                               port=email_config['port'])
+        #     server.login(email_config['login'], email_config['pass'])
+        #     server.sendmail(from_addr=email_config['from_addr'],
+        #                     to_addrs=email_config['to_addr'],
+        #                     msg=msg.as_string())
+        #     server.quit()
+        # except smtplib.SMTPRecipientsRefused as e:
+        #     logging.info('Ошибка отправки сообщения SMTPRecipientsRefused: {}'.format(e.recipients))
+        # except (smtplib.SMTPException, socket.gaierror) as e:
+        #     logging.info('Ошибка отправки сообщения: {}'.format(e))
         self.notification_text = ''
 
 
 def main():
-    logging.info('Запуск программы')
+    logging.info('Запуск телеграм-бота')
+
     c = NicehashClient()
-    c.get_balance()
-    c.check_payments()
-    c.check_workers()
-    c.send_notification()
+
+    # КОМАНДЫ БОТА
+    def start(bot, update):
+        logging.info('Получена команда /start от chat_id = {}'.format(update.message.chat_id))
+        bot.send_message(chat_id=telegram_config['my_telegram_id'], text="Добрый день, хозяинъ!")
+
+    def balance(bot, update=None):
+        logging.info('Получена команда /balance')
+        c.get_balance()
+        c.get_last_payment()
+        c.send_notification()
+
+    def error(bot, update, error):
+        logging.warning('Update "%s" caused error "%s"' % (update, error))
+
+    # ХЕНДЛЕРЫ БОТА
+    start_handler = CommandHandler('start', start)
+    balance_handler = CommandHandler('balance', balance)
+    dispatcher.add_handler(start_handler)
+    dispatcher.add_handler(balance_handler)
+    # log all errors
+    dispatcher.add_error_handler(error)
+
+    # ЗАПУСК БОТА
+    updater.start_polling()
+    balance(bot=dispatcher.bot)  # Запрос баланса
     while True:
         time.sleep(60)
-        c.check_workers(send=True)
-        c.check_payments(send=True)
+        c.check_workers()
+        c.check_new_payments()
 
 
 if __name__ == '__main__':
