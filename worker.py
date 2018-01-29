@@ -157,7 +157,6 @@ class NicehashClient:
                                   data['result']['stats']]) * concurrency
             self.notification_text += text_unpaid_balance.format(unpaid_balance,
                                                                  currency_name)
-            self.send_notification()
 
     def send_notification(self):
         bot = dispatcher.bot
