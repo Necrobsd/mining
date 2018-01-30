@@ -183,6 +183,7 @@ class NicehashClient:
                 self.notification_text += 'Невыплаченный баланс на текущий момент: ' \
                                           '{:.4f} {}\n'.format(unpaid_balance,
                                                                currency_name)
+                self.get_balance()
                 self.send_notification()
 
     def get_last_payment(self):
