@@ -12,7 +12,8 @@ from telegram.ext import Updater, CommandHandler
 from telegram.error import TelegramError
 
 
-logging.basicConfig(filename='worker.log', level=logging.INFO,
+log_filename = 'worker.log'
+logging.basicConfig(filename=log_filename, level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 local_tz = pytz.timezone("Asia/Vladivostok")
 utc_tz = pytz.utc
@@ -50,6 +51,8 @@ def get_localtime(timestamp):
 class NicehashClient:
     REQUESTS_NUMBER_FOR_WORKERS_ERROR = 3
     # Количество последовательных запросов, вернувших ошибку, для формирования ошибки о работе воркеров
+    ETH_SPEED_HISTORY_LENGTH = 10
+    # Количество последних значений скорости эфира
 
     def __init__(self):
         self.wallet = nicehash_config['wallet']
@@ -59,6 +62,7 @@ class NicehashClient:
         self.workers_status_errors_count = 0
         self.payments = None
         self.notification_text = ''
+        self.eth_speed = []
 
     def get_balance(self):
         params = {
@@ -84,12 +88,21 @@ class NicehashClient:
         }
         data = get_json(params)
         if data['result']['workers']:
+            try:
+                self.eth_speed.append(data['result']['workers'][0][1]['a'])
+                if len(self.eth_speed) >= self.ETH_SPEED_HISTORY_LENGTH:
+                    self.eth_speed.pop(0)
+            except (KeyError, IndexError) as e:
+                logging.info('Ошибка получения скорости рига: {}'.format(e))
             if not self.workers_status:
                 self.notification_text += 'Статус воркеров: Все воркеры работают\n'
                 self.send_notification()
             self.workers_status = True
             self.workers_status_errors_count = 0
         else:
+            self.eth_speed.append('0')
+            if len(self.eth_speed) >= self.ETH_SPEED_HISTORY_LENGTH:
+                self.eth_speed.pop(0)
             if self.workers_status_errors_count < self.REQUESTS_NUMBER_FOR_WORKERS_ERROR - 1:
                 self.workers_status_errors_count += 1
             else:
@@ -182,6 +195,10 @@ class NicehashClient:
         #     logging.info('Ошибка отправки сообщения: {}'.format(e))
         self.notification_text = ''
 
+    def show_speed(self):
+        self.notification_text = 'Скорость рига [ETH]: {}'.format(self.eth_speed)
+        self.send_notification()
+
 
 def main():
     logging.info('Запуск телеграм-бота')
@@ -202,11 +219,17 @@ def main():
     def error(bot, update, error):
         logging.warning('Update "%s" caused error "%s"' % (update, error))
 
+    def speed(bot, update):
+        logging.info('Получена команда /speed')
+        c.show_speed()
+
     # ХЕНДЛЕРЫ БОТА
     start_handler = CommandHandler('start', start)
     balance_handler = CommandHandler('balance', balance)
+    speed_handler = CommandHandler('speed', speed)
     dispatcher.add_handler(start_handler)
     dispatcher.add_handler(balance_handler)
+    dispatcher.add_handler(speed_handler)
     # log all errors
     dispatcher.add_error_handler(error)
 
