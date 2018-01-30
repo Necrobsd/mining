@@ -21,6 +21,39 @@ utc_tz = pytz.utc
 updater = Updater(token=telegram_config['api_token'])
 dispatcher = updater.dispatcher
 
+ALGORITHMS = {
+    0: 'Scrypt',
+    1: 'SHA256',
+    2: 'ScryptNf',
+    3: 'X11',
+    4: 'X13',
+    5: 'Keccak',
+    6: 'X15',
+    7: 'Nist5',
+    8: 'NeoScrypt',
+    9: 'Lyra2RE',
+    10: 'WhirlpoolX',
+    11: 'Qubit',
+    12: 'Quark',
+    13: 'Axiom',
+    14: 'Lyra2REv2',
+    15: 'ScryptJaneNf16',
+    16: 'Blake256r8',
+    17: 'Blake256r14',
+    18: 'Blake256r8vnl',
+    19: 'Hodl',
+    20: 'DaggerHashimoto',
+    21: 'Decred',
+    22: 'CryptoNight',
+    23: 'Lbry',
+    24: 'Equihash',
+    25: 'Pascal',
+    26: 'X11Gost',
+    27: 'Sia',
+    28: 'Blake2s',
+    29: 'Skunk'
+}
+
 def get_json(params):
     URL = 'https://api.nicehash.com/api'
     r = requests.get(URL, params=params)
@@ -62,7 +95,7 @@ class NicehashClient:
         self.workers_status_errors_count = 0
         self.payments = None
         self.notification_text = ''
-        self.eth_speed = []
+        self.speed = {}
 
     def get_balance(self):
         params = {
@@ -89,9 +122,16 @@ class NicehashClient:
         data = get_json(params)
         if data['result']['workers']:
             try:
-                self.eth_speed.append(data['result']['workers'][0][1]['a'])
-                if len(self.eth_speed) >= self.ETH_SPEED_HISTORY_LENGTH:
-                    self.eth_speed.pop(0)
+                for alg in data['result']['workers']:
+                    algorithm_id = alg[-1]
+                    algorithm_speed_history = self.speed.get(algorithm_id, [])
+                    if len(algorithm_speed_history) >= self.ETH_SPEED_HISTORY_LENGTH:
+                        algorithm_speed_history.pop(0)
+                    algorithm_speed_history.append(alg[1]['a'])
+                    self.speed[algorithm_id] = algorithm_speed_history
+                # self.speed.append(data['result']['workers'][0][1]['a'])
+                # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
+                #     self.speed.pop(0)
             except (KeyError, IndexError) as e:
                 logging.info('Ошибка получения скорости рига: {}'.format(e))
             if not self.workers_status:
@@ -100,9 +140,13 @@ class NicehashClient:
             self.workers_status = True
             self.workers_status_errors_count = 0
         else:
-            self.eth_speed.append('0')
-            if len(self.eth_speed) >= self.ETH_SPEED_HISTORY_LENGTH:
-                self.eth_speed.pop(0)
+            for alg in self.speed.keys():
+                if len(self.speed[alg]) >= self.ETH_SPEED_HISTORY_LENGTH:
+                    self.speed[alg].pop(0)
+                self.speed[alg].append(0)
+            # self.speed.append('0')
+            # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
+            #     self.speed.pop(0)
             if self.workers_status_errors_count < self.REQUESTS_NUMBER_FOR_WORKERS_ERROR - 1:
                 self.workers_status_errors_count += 1
             else:
@@ -196,7 +240,9 @@ class NicehashClient:
         self.notification_text = ''
 
     def show_speed(self):
-        self.notification_text = 'Скорость рига [ETH]: {}'.format(self.eth_speed)
+        self.notification_text = 'Скорость рига:\n'
+        for alg, values in self.speed.items():
+            self.notification_text += '{}: {}\n'.format(ALGORITHMS[alg], values)
         self.send_notification()
 
 
