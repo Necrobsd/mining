@@ -10,7 +10,7 @@ import pytz
 from datetime import datetime
 from telegram.ext import Updater, CommandHandler
 from telegram.error import TelegramError
-from yobit import api_call
+from yobit import api_call, get_concurrency_in_rub
 
 
 log_filename = 'worker.log'
@@ -66,16 +66,18 @@ def get_json(params):
 
 
 def get_concurrency():
+    return get_concurrency_in_rub('btc')
     # URL = 'https://api.cryptonator.com/api/ticker/btc-rub'
-    URL = 'https://api.exmo.com/v1/ticker/'
-    try:
-        r = requests.get(URL)
-        if r.status_code == 200:
-            data = r.json()
-            concurrency = float(data['BTC_RUB']['last_trade'])
-            return concurrency
-    except:
-        pass
+    # URL = 'https://api.exmo.com/v1/ticker/'
+    # try:
+    #     r = requests.get(URL)
+    #     if r.status_code == 200:
+    #         data = r.json()
+    #         concurrency = float(data['BTC_RUB']['last_trade'])
+    #         return concurrency
+    # except:
+    #     pass
+
 
 def get_localtime(timestamp):
     date_without_tz = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
