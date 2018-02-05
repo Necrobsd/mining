@@ -125,7 +125,8 @@ class NicehashClient:
             'addr': self.wallet
         }
         data = get_json(params)
-        if data['result']['workers']:
+        print('DATA=', data)
+        if data['result'] and data['result']['workers']:
             try:
                 for alg in data['result']['workers']:
                     algorithm_id = alg[-1]
