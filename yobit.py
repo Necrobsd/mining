@@ -13,8 +13,12 @@ if not os.path.exists(nonce_file):
 def get_concurrency_in_rub(currency):
     pair_name = '{}_rur'.format(currency)
     url = 'https://yobit.net/api/3/ticker/' + pair_name
-    res = requests.get(url).json()
-    return res[pair_name]['sell']
+    try:
+        res = requests.get(url).json()
+        if pair_name in res:
+            return res[pair_name]['sell']
+    except:
+        return None
 
 
 def api_call(**kwargs):

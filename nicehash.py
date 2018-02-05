@@ -126,7 +126,7 @@ class NicehashClient:
         }
         data = get_json(params)
         logging.info('DATA={}'.format(data))
-        if data['result'] and data['result']['workers']:
+        if 'result' in data and data['result']['workers']:
             try:
                 for alg in data['result']['workers']:
                     algorithm_id = alg[-1]
