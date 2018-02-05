@@ -125,7 +125,7 @@ class NicehashClient:
             'addr': self.wallet
         }
         data = get_json(params)
-        print('DATA=', data)
+        logging.info('DATA={}'.format(data))
         if data['result'] and data['result']['workers']:
             try:
                 for alg in data['result']['workers']:
