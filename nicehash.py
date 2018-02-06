@@ -125,41 +125,43 @@ class NicehashClient:
             'addr': self.wallet
         }
         data = get_json(params)
-        logging.info('DATA={}'.format(data))
-        if 'result' in data and data['result']['workers']:
-            try:
-                for alg in data['result']['workers']:
-                    algorithm_id = alg[-1]
-                    algorithm_speed_history = self.speed.get(algorithm_id, [])
-                    if len(algorithm_speed_history) >= self.ETH_SPEED_HISTORY_LENGTH:
-                        algorithm_speed_history.pop(0)
-                    algorithm_speed_history.append(alg[1]['a'])
-                    self.speed[algorithm_id] = algorithm_speed_history
-                # self.speed.append(data['result']['workers'][0][1]['a'])
+        if data:
+            if 'result' in data and data['result']['workers']:
+                try:
+                    for alg in data['result']['workers']:
+                        algorithm_id = alg[-1]
+                        algorithm_speed_history = self.speed.get(algorithm_id, [])
+                        if len(algorithm_speed_history) >= self.ETH_SPEED_HISTORY_LENGTH:
+                            algorithm_speed_history.pop(0)
+                        algorithm_speed_history.append(alg[1]['a'])
+                        self.speed[algorithm_id] = algorithm_speed_history
+                    # self.speed.append(data['result']['workers'][0][1]['a'])
+                    # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
+                    #     self.speed.pop(0)
+                except (KeyError, IndexError) as e:
+                    logging.warning('Ошибка получения скорости рига: {}'.format(e))
+                if not self.workers_status:
+                    self.notification_text += 'Статус воркеров: Все воркеры работают\n'
+                    self.send_notification()
+                self.workers_status = True
+                self.workers_status_errors_count = 0
+            else:
+                for alg in self.speed.keys():
+                    if len(self.speed[alg]) >= self.ETH_SPEED_HISTORY_LENGTH:
+                        self.speed[alg].pop(0)
+                    self.speed[alg].append(0)
+                # self.speed.append('0')
                 # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
                 #     self.speed.pop(0)
-            except (KeyError, IndexError) as e:
-                logging.info('Ошибка получения скорости рига: {}'.format(e))
-            if not self.workers_status:
-                self.notification_text += 'Статус воркеров: Все воркеры работают\n'
-                self.send_notification()
-            self.workers_status = True
-            self.workers_status_errors_count = 0
+                if self.workers_status_errors_count < self.REQUESTS_NUMBER_FOR_WORKERS_ERROR - 1:
+                    self.workers_status_errors_count += 1
+                else:
+                    if self.workers_status:
+                        self.notification_text += 'Статус воркеров: Воркеры остановлены\n'
+                        self.send_notification()
+                    self.workers_status = False
         else:
-            for alg in self.speed.keys():
-                if len(self.speed[alg]) >= self.ETH_SPEED_HISTORY_LENGTH:
-                    self.speed[alg].pop(0)
-                self.speed[alg].append(0)
-            # self.speed.append('0')
-            # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
-            #     self.speed.pop(0)
-            if self.workers_status_errors_count < self.REQUESTS_NUMBER_FOR_WORKERS_ERROR - 1:
-                self.workers_status_errors_count += 1
-            else:
-                if self.workers_status:
-                    self.notification_text += 'Статус воркеров: Воркеры остановлены\n'
-                    self.send_notification()
-                self.workers_status = False
+            logging.warning('Ошибка получения ответа о воркерах от сервера. data = {}'.format(data))
 
     def check_new_payments(self):
         logging.info('check_payments')
@@ -230,7 +232,7 @@ class NicehashClient:
         try:
             bot.send_message(chat_id=telegram_config['my_telegram_id'], text=self.notification_text)
         except (socket.error, TelegramError) as e:
-            logging.info('Ошибка отправки сообщения: {}'.format(e))
+            logging.warning('Ошибка отправки сообщения: {}'.format(e))
 
         # msg = MIMEText(self.notification_text)
         # msg['Subject'] = Header(email_config['subject'], 'utf-8')
