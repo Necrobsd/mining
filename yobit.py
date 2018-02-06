@@ -58,7 +58,12 @@ def api_call(**kwargs):
     else:
         funds = data['return']['funds']
         for fund_name, value in funds.items():
-            result += '{}: {} ({:.2f} рублей)\n'.format(fund_name,
-                                                      value,
-                                                      value * get_concurrency_in_rub(fund_name))
+            currency = get_concurrency_in_rub(fund_name)
+            if currency:
+                result += '{}: {} ({:.2f} рублей)\n'.format(fund_name,
+                                                            value,
+                                                            value * currency)
+            else:
+                result += '{}: {} ({:.6f} монет)\n'.format(fund_name,
+                                                           value)
         return result
