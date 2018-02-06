@@ -64,6 +64,5 @@ def api_call(**kwargs):
                                                             value,
                                                             value * currency)
             else:
-                result += '{}: {} ({:.6f} монет)\n'.format(fund_name,
-                                                           value)
+                result += '{}: {}\n'.format(fund_name, value)
         return result
