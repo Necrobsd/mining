@@ -10,17 +10,24 @@ if not os.path.exists(nonce_file):
     with open(nonce_file, "w") as f:
         f.write('2')
 
-scraper = cfscrape.create_scraper()
-
 
 def get_concurrency_in_rub(currency):
     pair_name = '{}_rur'.format(currency)
     url = 'https://yobit.net/api/3/ticker/' + pair_name
+    #  Пытаемся получить курс валюты в рублях с помощью библиотеки requests
     try:
-        res = scraper.get(url).json()
+        res = requests.get(url).json()
         if pair_name in res:
             return res[pair_name]['sell']
     except:
+        try:
+            # В случае включение защиты сайта Yobit от DDoS получаем курсы через cfscrape
+            scraper = cfscrape.create_scraper()
+            res = scraper.get(url).json()
+            if pair_name in res:
+                return res[pair_name]['sell']
+        except:
+            pass
         return None
 
 
