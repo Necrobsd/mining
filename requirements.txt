@@ -1,8 +1,11 @@
 certifi==2018.1.18
+cfscrape==1.9.4
 chardet==3.0.4
 future==0.16.0
 idna==2.6
+PyExecJS==1.5.1
 python-telegram-bot==9.0.0
 pytz==2017.3
 requests==2.18.4
+six==1.11.0
 urllib3==1.22
