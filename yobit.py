@@ -2,6 +2,7 @@ import hmac, hashlib
 import requests
 import os
 from conf import yobit_config
+import cfscrape
 
 
 nonce_file = "nonce_count"
@@ -9,12 +10,14 @@ if not os.path.exists(nonce_file):
     with open(nonce_file, "w") as f:
         f.write('2')
 
+scraper = cfscrape.create_scraper()
+
 
 def get_concurrency_in_rub(currency):
     pair_name = '{}_rur'.format(currency)
     url = 'https://yobit.net/api/3/ticker/' + pair_name
     try:
-        res = requests.get(url).json()
+        res = scraper.get(url).json()
         if pair_name in res:
             return res[pair_name]['sell']
     except:
