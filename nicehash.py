@@ -10,7 +10,7 @@ import pytz
 from datetime import datetime
 from telegram.ext import Updater, CommandHandler
 from telegram.error import TelegramError
-from yobit import api_call, get_concurrency_in_rub
+from yobit import api_call, get_concurrency, how_to_sell_my_btc
 
 
 log_filename = 'worker.log'
@@ -63,20 +63,6 @@ def get_json(params):
         result = r.json()
         if 'error' not in result['result']:
             return result
-
-
-def get_concurrency():
-    return get_concurrency_in_rub('btc')
-    # URL = 'https://api.cryptonator.com/api/ticker/btc-rub'
-    # URL = 'https://api.exmo.com/v1/ticker/'
-    # try:
-    #     r = requests.get(URL)
-    #     if r.status_code == 200:
-    #         data = r.json()
-    #         concurrency = float(data['BTC_RUB']['last_trade'])
-    #         return concurrency
-    # except:
-    #     pass
 
 
 def get_localtime(timestamp):
@@ -285,15 +271,22 @@ def main():
         c.notification_text = api_call(method='getInfo')
         c.send_notification()
 
+    def sell(bot, update):
+        logging.info('Получена команда /sell')
+        c.notification_text = how_to_sell_my_btc()
+        c.send_notification()
+
     # ХЕНДЛЕРЫ БОТА
     start_handler = CommandHandler('start', start)
     balance_handler = CommandHandler('balance', balance)
     speed_handler = CommandHandler('speed', speed)
     yobit_handler = CommandHandler('yobit', yobit)
+    sell_handler = CommandHandler('sell', sell)
     dispatcher.add_handler(start_handler)
     dispatcher.add_handler(balance_handler)
     dispatcher.add_handler(speed_handler)
     dispatcher.add_handler(yobit_handler)
+    dispatcher.add_handler(sell_handler)
     # log all errors
     dispatcher.add_error_handler(error)
 

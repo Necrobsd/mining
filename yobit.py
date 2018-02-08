@@ -11,9 +11,9 @@ if not os.path.exists(nonce_file):
         f.write('2')
 
 
-def get_concurrency_in_rub(currency):
-    pair_name = '{}_rur'.format(currency)
-    url = 'https://yobit.net/api/3/ticker/' + pair_name
+def get_concurrency(from_currency='btc', to_currency='rur'):
+    pair_name = '{}_{}'.format(from_currency, to_currency)
+    url = 'https://yobit.net/api/3/ticker/{}'.format(pair_name)
     #  Пытаемся получить курс валюты в рублях с помощью библиотеки requests
     try:
         res = requests.get(url).json()
@@ -25,10 +25,32 @@ def get_concurrency_in_rub(currency):
             scraper = cfscrape.create_scraper()
             res = scraper.get(url).json()
             if pair_name in res:
-                return res[pair_name]['sell']
+                return res[pair_name]['buy']
         except:
             pass
         return None
+
+
+def how_to_sell_my_btc():
+    btc_balance = 0.01
+    btc_to_rur_concurrency = get_concurrency()
+    print(btc_to_rur_concurrency)
+    btc_to_usd_concurrency = get_concurrency(to_currency='usd')
+    print(btc_to_usd_concurrency)
+    usd_to_rur_concurrency = get_concurrency(from_currency='usd')
+    print(usd_to_rur_concurrency)
+    if btc_to_rur_concurrency:
+        btc_to_rur_balance = btc_to_rur_concurrency * btc_balance
+
+    else:
+        btc_to_rur_balance = 0
+    if btc_to_usd_concurrency and usd_to_rur_concurrency:
+        btc_to_usd_to_rub_balance = btc_balance * btc_to_usd_concurrency * usd_to_rur_concurrency
+    else:
+        btc_to_usd_to_rub_balance = 0
+    return 'При переводе 0,01 BTC в рубли получаем: {:.2f}руб;\n' \
+           'При переводе 0,01 BTC через доллар получаем: {:.2f}руб'.format(btc_to_rur_balance,
+                                                                           btc_to_usd_to_rub_balance)
 
 
 def api_call(**kwargs):
@@ -68,7 +90,7 @@ def api_call(**kwargs):
     else:
         funds = data['return']['funds']
         for fund_name, value in funds.items():
-            currency = get_concurrency_in_rub(fund_name)
+            currency = get_concurrency(fund_name)
             if currency:
                 result += '{}: {} ({:.2f} рублей)\n'.format(fund_name,
                                                             value,
@@ -76,3 +98,7 @@ def api_call(**kwargs):
             else:
                 result += '{}: {}\n'.format(fund_name, value)
         return result
+
+
+if __name__ == '__main__':
+    print(how_to_sell_my_btc())
