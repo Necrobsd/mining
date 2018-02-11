@@ -81,24 +81,27 @@ def api_call(**kwargs):
         "Key": key,
         "Sign": sign
     }
-    req = requests.post(request_url, params, headers=http_headers)
-    # print(sign)
-    data = req.json()
-    # print(data)
-    if 'error' in data:
-        return 'Ошибка при выполнении запроса: {}'.format(data['error'])
-    else:
-        funds = data['return']['funds']
-        for fund_name, value in funds.items():
-            currency = get_concurrency(fund_name)
-            if currency:
-                result += '{}: {} ({:.2f} рублей)\n'.format(fund_name,
-                                                            value,
-                                                            value * currency)
-            else:
-                result += '{}: {}\n'.format(fund_name, value)
-        return result
+    scraper = cfscrape.create_scraper()
+    try:
+        req = scraper.post(request_url, params, headers=http_headers)
+        data = req.json()
+        # print(data)
+        if 'error' in data:
+            return 'Ошибка при выполнении запроса: {}'.format(data['error'])
+        else:
+            funds = data['return']['funds']
+            for fund_name, value in funds.items():
+                currency = get_concurrency(fund_name)
+                if currency:
+                    result += '{}: {} ({:.2f} рублей)\n'.format(fund_name,
+                                                                value,
+                                                                value * currency)
+                else:
+                    result += '{}: {}\n'.format(fund_name, value)
+            return result
+    except Exception as e:
+        return 'Ошибка при выполнении запроса: {}'.format(e)
 
 
 if __name__ == '__main__':
-    print(how_to_sell_my_btc())
+    print(api_call(method='getInfo'))
