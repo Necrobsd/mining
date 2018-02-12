@@ -5,10 +5,12 @@ from conf import yobit_config
 import cfscrape
 
 
+directory = os.path.dirname(os.path.abspath(__file__))
 nonce_file = "nonce_count"
-if not os.path.exists(nonce_file):
-    with open(nonce_file, "w") as f:
-        f.write('2')
+path = os.path.join(directory, nonce_file)
+if not os.path.exists(path):
+    with open(path, "w") as f:
+        f.write('1')
 
 
 def get_concurrency(from_currency='btc', to_currency='rur'):
@@ -56,7 +58,7 @@ def how_to_sell_my_btc():
 def api_call(**kwargs):
     request_url = "https://yobit.io/tapi"
     result = ''
-    with open(nonce_file, 'r+') as f:
+    with open(path, 'r+') as f:
         nonce = int(f.read())
         f.seek(0)
         f.write(str(nonce + 1))

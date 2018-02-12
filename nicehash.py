@@ -1,9 +1,7 @@
 from conf import nicehash_config, email_config, telegram_config
 import requests
 import time
-import smtplib
-from email.mime.text import MIMEText
-from email.header import Header
+import os
 import logging
 import socket
 import pytz
@@ -13,7 +11,8 @@ from telegram.error import TelegramError
 from yobit import api_call, get_concurrency, how_to_sell_my_btc
 
 
-log_filename = 'worker.log'
+directory = os.path.dirname(os.path.abspath(__file__))
+log_filename = os.path.join(directory, 'worker.log')
 logging.basicConfig(filename=log_filename, level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 local_tz = pytz.timezone("Asia/Vladivostok")
