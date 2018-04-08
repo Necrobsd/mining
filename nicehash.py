@@ -271,12 +271,12 @@ class NicehashClient:
                 if new_projects:
                     self.notification_text += 'Новые проекты на FL.RU:\n'
                     for project in new_projects:
-                        self.notification_text += f'Тема: {current_projects[project]["name"]}\n' \
-                                                  f'Ссылка: {current_projects[project]["link"]}'
+                        self.notification_text += 'Тема: {}\nСсылка:{}'.format(current_projects[project]["name"],
+                                                                               current_projects[project]["link"])
             self.projects = current_projects
             self.send_notification()
         else:
-            logging.info(f'Ошибка получения новых проектов с FL.RU: {r.text}')
+            logging.info('Ошибка получения новых проектов с FL.RU: {}'.format(r.text))
 
 
 def main():
