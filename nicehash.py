@@ -273,8 +273,8 @@ class NicehashClient:
                     for project in new_projects:
                         self.notification_text += 'Тема: {}\nСсылка:{}'.format(current_projects[project]["name"],
                                                                                current_projects[project]["link"])
-            self.projects = current_projects
-            self.send_notification()
+                    self.projects = current_projects
+                    self.send_notification()
         else:
             logging.info('Ошибка получения новых проектов с FL.RU: {}'.format(r.text))
 
