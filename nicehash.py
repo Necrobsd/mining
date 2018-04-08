@@ -9,6 +9,7 @@ from datetime import datetime
 from telegram.ext import Updater, CommandHandler
 from telegram.error import TelegramError
 from yobit import api_call, get_concurrency, how_to_sell_my_btc
+from bs4 import BeautifulSoup
 
 
 directory = os.path.dirname(os.path.abspath(__file__))
@@ -86,6 +87,7 @@ class NicehashClient:
         self.payments = None
         self.notification_text = ''
         self.speed = {}
+        self.projects = {}
 
     def get_balance(self):
         params = {
@@ -218,21 +220,6 @@ class NicehashClient:
             bot.send_message(chat_id=telegram_config['my_telegram_id'], text=self.notification_text)
         except (socket.error, TelegramError) as e:
             logging.warning('Ошибка отправки сообщения: {}'.format(e))
-
-        # msg = MIMEText(self.notification_text)
-        # msg['Subject'] = Header(email_config['subject'], 'utf-8')
-        # try:
-        #     server = smtplib.SMTP_SSL(host=email_config['host'],
-        #                               port=email_config['port'])
-        #     server.login(email_config['login'], email_config['pass'])
-        #     server.sendmail(from_addr=email_config['from_addr'],
-        #                     to_addrs=email_config['to_addr'],
-        #                     msg=msg.as_string())
-        #     server.quit()
-        # except smtplib.SMTPRecipientsRefused as e:
-        #     logging.info('Ошибка отправки сообщения SMTPRecipientsRefused: {}'.format(e.recipients))
-        # except (smtplib.SMTPException, socket.gaierror) as e:
-        #     logging.info('Ошибка отправки сообщения: {}'.format(e))
         self.notification_text = ''
 
     def show_speed(self):
@@ -240,6 +227,56 @@ class NicehashClient:
         for alg, values in self.speed.items():
             self.notification_text += '{}: {}\n'.format(ALGORITHMS[alg], values)
         self.send_notification()
+
+    def parse_fl_ru(self):
+        url = 'https://www.fl.ru/projects/'
+        params = {
+            'action': 'postfilter',
+            'kind': 5,
+            'pf_category': '',
+            'pf_subcategory': '',
+            'comboe_columns[1]': 0,
+            'comboe_columns[0]': 0,
+            'comboe_column_id': 0,
+            'comboe_db_id': 0,
+            'comboe': ' ',
+            'location_columns[1]': 0,
+            'location_columns[0]': 0,
+            'location_column_id': 0,
+            'location_db_id': 0,
+            'location': ' ',
+            'pf_cost_from': '',
+            'currency_text_columns[1]': 0,
+            'currency_text_columns[0]': 2,
+            'currency_text_column_id': 0,
+            'currency_text_db_id': 2,
+            'pf_currency': 2,
+            'currency_text': '',
+            'pf_keywords': 'python'
+        }
+
+        current_projects = {}
+        r = requests.post(url, params)
+        if r.status_code == 200:
+            page = BeautifulSoup(r.text, "html.parser")
+            for post in page.find_all('div', {'class': 'b-post'}):
+                item = post.find('a', {'class': 'b-post__link'})
+                id = item.get('id')
+                name = item.text
+                link = url[:-10] + item.get('href')
+                current_projects[id] = {'name': name, 'link': link}
+
+            if self.projects:
+                new_projects = set(current_projects).difference(set(self.projects))
+                if new_projects:
+                    self.notification_text += 'Новые проекты на FL.RU:\n'
+                    for project in new_projects:
+                        self.notification_text += f'Тема: {current_projects[project]["name"]}\n' \
+                                                  f'Ссылка: {current_projects[project]["link"]}'
+            self.projects = current_projects
+            self.send_notification()
+        else:
+            logging.info(f'Ошибка получения новых проектов с FL.RU: {r.text}')
 
 
 def main():
@@ -296,6 +333,7 @@ def main():
         time.sleep(60)
         c.check_workers()
         c.check_new_payments()
+        c.parse_fl_ru()
 
 
 if __name__ == '__main__':
