@@ -229,6 +229,7 @@ class NicehashClient:
         self.send_notification()
 
     def parse_fl_ru(self):
+        logging.info('Парсинг fl.ru')
         url = 'https://www.fl.ru/projects/'
         params = {
             'action': 'postfilter',
@@ -273,8 +274,8 @@ class NicehashClient:
                     for project in new_projects:
                         self.notification_text += 'Тема: {}\nСсылка:{}'.format(current_projects[project]["name"],
                                                                                current_projects[project]["link"])
-                    self.projects = current_projects
                     self.send_notification()
+            self.projects = current_projects
         else:
             logging.info('Ошибка получения новых проектов с FL.RU: {}'.format(r.text))
 
