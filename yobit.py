@@ -34,25 +34,18 @@ def get_concurrency(from_currency='btc', to_currency='rur'):
 
 
 def how_to_sell_my_btc():
-    btc_balance = 0.01
     btc_to_rur_concurrency = get_concurrency()
-    print(btc_to_rur_concurrency)
     btc_to_usd_concurrency = get_concurrency(to_currency='usd')
-    print(btc_to_usd_concurrency)
-    usd_to_rur_concurrency = get_concurrency(from_currency='usd')
-    print(usd_to_rur_concurrency)
-    if btc_to_rur_concurrency:
-        btc_to_rur_balance = btc_to_rur_concurrency * btc_balance
-
-    else:
-        btc_to_rur_balance = 0
-    if btc_to_usd_concurrency and usd_to_rur_concurrency:
-        btc_to_usd_to_rub_balance = btc_balance * btc_to_usd_concurrency * usd_to_rur_concurrency
-    else:
-        btc_to_usd_to_rub_balance = 0
-    return 'При переводе 0,01 BTC в рубли получаем: {:.2f}руб;\n' \
-           'При переводе 0,01 BTC через доллар получаем: {:.2f}руб'.format(btc_to_rur_balance,
-                                                                           btc_to_usd_to_rub_balance)
+    eth_to_rur_concurrency = get_concurrency(from_currency='eth')
+    eth_to_usd_concurrency = get_concurrency(from_currency='eth',
+                                             to_currency='usd')
+    return '1 BTC = {:.2f}руб;\n' \
+           '1 BTC = {:.2f}usd;\n' \
+           '1 ETH = {:.2f}руб;\n' \
+           '1 ETH = {:.2f}usd;'.format(btc_to_rur_concurrency,
+                                       btc_to_usd_concurrency,
+                                       eth_to_rur_concurrency,
+                                       eth_to_usd_concurrency)
 
 
 def api_call(**kwargs):
