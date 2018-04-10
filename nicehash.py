@@ -265,15 +265,19 @@ class NicehashClient:
                 id = item.get('id')
                 name = item.text
                 link = url[:-10] + item.get('href')
-                current_projects[id] = {'name': name, 'link': link}
+                js = post.find_all('script')  # JS скрипты в объявлении, содержащии цену и описание
+                price = BeautifulSoup(js[0].text[16:-2], "html.parser").find('div', {'class': 'b-post__price'}).text
+                desc = BeautifulSoup(js[1].text[10:-3]).find('div', {'class': 'b-post__txt'}).text
+                current_projects[id] = {'name': name, 'link': link, 'price': price, 'desc': desc}
 
             if self.projects:
                 new_projects = set(current_projects).difference(set(self.projects))
                 if new_projects:
                     self.notification_text += 'Новые проекты на FL.RU:\n'
                     for project in new_projects:
-                        self.notification_text += 'Тема: {}\n{}'.format(current_projects[project]["name"],
-                                                                               current_projects[project]["link"])
+                        self.notification_text += 'Тема: {name}\n' \
+                                                  'Цена: {price}\n' \
+                                                  '{desc}\n{link}\n'.format(**current_projects[project])
                     self.send_notification()
             self.projects = current_projects
         else:
