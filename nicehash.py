@@ -101,9 +101,9 @@ class NicehashClient:
             concurrency = get_concurrency()
             if concurrency:
                 balance_rub = balance_btc * concurrency
-                self.notification_text += 'Баланс кошелька: {:.2f} RUB\n'.format(balance_rub)
+                self.notification_text += 'Баланс кошелька: {:.2f} RUB ({:.8f} BTC)\n'.format(balance_rub, balance_btc)
             else:
-                self.notification_text += 'Баланс кошелька: {:.4f} BTC\n'.format(balance_btc)
+                self.notification_text += 'Баланс кошелька: {:.8f} BTC\n'.format(balance_btc)
 
     def check_workers(self):
         logging.info('check_workers')
@@ -164,17 +164,21 @@ class NicehashClient:
                 last_payment_date = get_localtime(self.payments[0]['time'])
                 if concurrency:
                     currency_name = 'RUB'
-                    text_new_payment = 'Произведена новая выплата на кошелек: {:.2f} {} от {}\n'
+                    text_new_payment = 'Произведена новая выплата на кошелек: {:.2f} RUB ({:.8f} BTC) от {}\n'
                     text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.2f} {}\n'
+                    last_payment_btc = float(self.payments[0]['amount'])
+                    last_payment_rub = last_payment_btc * concurrency
+                    self.notification_text += text_new_payment.format(last_payment_rub,
+                                                                      last_payment_btc,
+                                                                      last_payment_date)
                 else:
                     concurrency = 1
                     currency_name = 'BTC'
-                    text_new_payment = 'Произведена новая выплата на кошелек: {:.5f} {} от {}\n'
-                    text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.5f} {}\n'
-                last_payment = float(self.payments[0]['amount']) * concurrency
-                self.notification_text += text_new_payment.format(last_payment,
-                                                                  currency_name,
-                                                                  last_payment_date)
+                    text_new_payment = 'Произведена новая выплата на кошелек: {:.8f} BTC от {}\n'
+                    text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.8f} {}\n'
+                    last_payment_btc = float(self.payments[0]['amount'])
+                    self.notification_text += text_new_payment.format(last_payment_btc,
+                                                                      last_payment_date)
                 unpaid_balance = sum([float(b['balance'])
                                       for b in
                                       data['result']['stats']]) * concurrency
@@ -194,18 +198,20 @@ class NicehashClient:
             concurrency = get_concurrency()
             if concurrency:
                 currency_name = 'RUB'
-                text_last_payment = 'Последняя выплата: {:.2f} {} от {}\n'
+                text_last_payment = 'Последняя выплата: {:.2f} {} ({:.8f} BTC) от {}\n'
                 text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.2f} {}\n'
             else:
                 concurrency = 1
                 currency_name = 'BTC'
-                text_last_payment = 'Последняя выплата: {:.5f} {} от {}\n'
-                text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.5f} {}\n'
+                text_last_payment = 'Последняя выплата: {:.8f} {} ({:.8f} BTC) от {}\n'
+                text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.8f} {}\n'
             self.payments = data['result']['payments']
-            last_payment = float(self.payments[0]['amount']) * concurrency
+            last_payment_btc = float(self.payments[0]['amount'])
+            last_payment_rub = last_payment_btc * concurrency
             last_payment_date = get_localtime(self.payments[0]['time'])
-            self.notification_text += text_last_payment.format(last_payment,
+            self.notification_text += text_last_payment.format(last_payment_rub,
                                                                currency_name,
+                                                               last_payment_btc,
                                                                last_payment_date)
             unpaid_balance = sum([float(b['balance'])
                                   for b in
