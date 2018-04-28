@@ -341,7 +341,7 @@ def main():
     updater.start_polling()
     balance(bot=dispatcher.bot)  # Запрос баланса
     while True:
-        time.sleep(60)
+        time.sleep(15 * 60)  # Запуск проверок раз в 15 минут
         c.check_workers()
         c.check_new_payments()
         c.parse_fl_ru()
