@@ -5,6 +5,7 @@ chardet==3.0.4
 future==0.16.0
 idna==2.6
 PyExecJS==1.5.1
+PySocks==1.6.8
 python-telegram-bot==9.0.0
 pytz==2017.3
 requests==2.18.4

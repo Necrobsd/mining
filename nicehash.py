@@ -1,4 +1,4 @@
-from conf import nicehash_config, email_config, telegram_config
+from conf import nicehash_config, telegram_config, REQUEST_KWARGS
 import requests
 import time
 import os
@@ -19,7 +19,10 @@ logging.basicConfig(filename=log_filename, level=logging.INFO,
 local_tz = pytz.timezone("Asia/Vladivostok")
 utc_tz = pytz.utc
 
-updater = Updater(token=telegram_config['api_token'])
+
+updater = Updater(token=telegram_config['api_token'],
+                  request_kwargs=REQUEST_KWARGS)
+
 dispatcher = updater.dispatcher
 
 ALGORITHMS = {
@@ -55,6 +58,7 @@ ALGORITHMS = {
     29: 'Skunk'
 }
 
+
 def get_json(params):
     URL = 'https://api.nicehash.com/api'
     r = requests.get(URL, params=params)
@@ -74,7 +78,8 @@ def get_localtime(timestamp):
 
 class NicehashClient:
     REQUESTS_NUMBER_FOR_WORKERS_ERROR = 3
-    # Количество последовательных запросов, вернувших ошибку, для формирования ошибки о работе воркеров
+    # Количество последовательных запросов, вернувших ошибку,
+    # для формирования ошибки о работе воркеров
     ETH_SPEED_HISTORY_LENGTH = 10
     # Количество последних значений скорости эфира
 
