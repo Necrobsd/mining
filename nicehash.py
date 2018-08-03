@@ -1,16 +1,19 @@
-from conf import nicehash_config, telegram_config, REQUEST_KWARGS
-import requests
-import time
-import os
 import logging
+import os
 import socket
-import pytz
+import sys
+import time
 from datetime import datetime
-from telegram.ext import Updater, CommandHandler
-from telegram.error import TelegramError
-from yobit import api_call, get_concurrency, how_to_sell_my_btc
-from bs4 import BeautifulSoup
+from threading import Thread
 
+import pytz
+import requests
+from bs4 import BeautifulSoup
+from telegram.error import TelegramError
+from telegram.ext import Updater, CommandHandler
+
+from conf import nicehash_config, telegram_config
+from yobit import api_call, get_concurrency, how_to_sell_my_btc
 
 directory = os.path.dirname(os.path.abspath(__file__))
 log_filename = os.path.join(directory, 'worker.log')
@@ -20,8 +23,7 @@ local_tz = pytz.timezone("Asia/Vladivostok")
 utc_tz = pytz.utc
 
 
-updater = Updater(token=telegram_config['api_token'],
-                  request_kwargs=REQUEST_KWARGS)
+updater = Updater(token=telegram_config['api_token'])
 
 dispatcher = updater.dispatcher
 
@@ -300,6 +302,11 @@ def main():
 
     c = NicehashClient()
 
+    def stop_and_restart():
+        """Останавливаем бота и перезапускаем процесс"""
+        updater.stop()
+        os.execl(sys.executable, sys.executable, *sys.argv)
+
     # КОМАНДЫ БОТА
     def start(bot, update):
         logging.info('Получена команда /start от chat_id = {}'.format(update.message.chat_id))
@@ -313,6 +320,8 @@ def main():
 
     def error(bot, update, error):
         logging.warning('Update "%s" caused error "%s"' % (update, error))
+        logging.warning('Перезагрузка бота...')
+        Thread(target=stop_and_restart).start()
 
     def speed(bot, update):
         logging.info('Получена команда /speed')
