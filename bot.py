@@ -16,11 +16,6 @@ log_filename = os.path.join(directory, 'worker.log')
 logging.basicConfig(filename=log_filename, level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-nicehash_api = private_api('https://api2.nicehash.com',
-                           nicehash_config['org_id'],
-                           nicehash_config['key'],
-                           nicehash_config['secret'])
-
 updater = Updater(token=telegram_config['api_token'])
 
 dispatcher = updater.dispatcher
@@ -29,10 +24,16 @@ dispatcher = updater.dispatcher
 class NicehashClient:
 
     def __init__(self):
+        self.api = private_api(
+            'https://api2.nicehash.com',
+            nicehash_config['org_id'],
+            nicehash_config['key'],
+            nicehash_config['secret']
+        )
         self.notification_text = ''
 
     def get_balance(self):
-        result = private_api.get_accounts_for_currency('BTC')
+        result = self.api.get_accounts_for_currency('BTC')
         balance_btc = float(result['balance'])
         concurrency = get_concurrency()
         if concurrency:
