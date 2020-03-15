@@ -1,366 +1,321 @@
-import logging
-import os
-import socket
-import sys
-import time
 from datetime import datetime
-from threading import Thread
-
-import pytz
+from time import mktime
+import uuid
+import hmac
 import requests
-from bs4 import BeautifulSoup
-from telegram.error import TelegramError
-from telegram.ext import Updater, CommandHandler
-
-from conf import nicehash_config, telegram_config
-from yobit import api_call, get_concurrency, how_to_sell_my_btc
-
-directory = os.path.dirname(os.path.abspath(__file__))
-log_filename = os.path.join(directory, 'worker.log')
-logging.basicConfig(filename=log_filename, level=logging.INFO,
-                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-local_tz = pytz.timezone("Asia/Vladivostok")
-utc_tz = pytz.utc
+import json
+from hashlib import sha256
+import optparse
+import sys
 
 
-updater = Updater(token=telegram_config['api_token'])
+class public_api:
 
-dispatcher = updater.dispatcher
+    def __init__(self, host, verbose=False):
+        self.host = host
+        self.verbose = verbose
 
-ALGORITHMS = {
-    0: 'Scrypt',
-    1: 'SHA256',
-    2: 'ScryptNf',
-    3: 'X11',
-    4: 'X13',
-    5: 'Keccak',
-    6: 'X15',
-    7: 'Nist5',
-    8: 'NeoScrypt',
-    9: 'Lyra2RE',
-    10: 'WhirlpoolX',
-    11: 'Qubit',
-    12: 'Quark',
-    13: 'Axiom',
-    14: 'Lyra2REv2',
-    15: 'ScryptJaneNf16',
-    16: 'Blake256r8',
-    17: 'Blake256r14',
-    18: 'Blake256r8vnl',
-    19: 'Hodl',
-    20: 'DaggerHashimoto',
-    21: 'Decred',
-    22: 'CryptoNight',
-    23: 'Lbry',
-    24: 'Equihash',
-    25: 'Pascal',
-    26: 'X11Gost',
-    27: 'Sia',
-    28: 'Blake2s',
-    29: 'Skunk'
-}
+    def request(self, method, path, query, body):
+        url = self.host + path
+        if query:
+            url += '?' + query
 
+        if self.verbose:
+            print(method, url)
 
-def get_json(params):
-    URL = 'https://api.nicehash.com/api'
-    r = requests.get(URL, params=params)
-    if r.status_code == 200:
-        logging.info(r.content)
-        result = r.json()
-        if 'error' not in result['result']:
-            return result
-
-
-def get_localtime(timestamp):
-    date_without_tz = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-    date_utc = utc_tz.localize(date_without_tz, is_dst=None)
-    date_localtime = datetime.strftime(date_utc.astimezone(local_tz), '%d-%m-%Y %H:%M:%S')
-    return date_localtime
-
-
-class NicehashClient:
-    REQUESTS_NUMBER_FOR_WORKERS_ERROR = 3
-    # Количество последовательных запросов, вернувших ошибку,
-    # для формирования ошибки о работе воркеров
-    ETH_SPEED_HISTORY_LENGTH = 10
-    # Количество последних значений скорости эфира
-
-    def __init__(self):
-        self.wallet = nicehash_config['wallet']
-        self.id = nicehash_config['api_id']
-        self.key = nicehash_config['api_key']
-        self.workers_status = True
-        self.workers_status_errors_count = 0
-        self.payments = None
-        self.notification_text = ''
-        self.speed = {}
-        self.projects = {}
-
-    def get_balance(self):
-        params = {
-            'method': 'balance',
-            'id': self.id,
-            'key': self.key
-        }
-        data = get_json(params)
-        if data:
-            balance_btc = float(data['result']['balance_confirmed'])
-            concurrency = get_concurrency()
-            if concurrency:
-                balance_rub = balance_btc * concurrency
-                self.notification_text += 'Баланс кошелька: {:.2f} RUB ({:.8f} BTC)\n'.format(balance_rub, balance_btc)
-            else:
-                self.notification_text += 'Баланс кошелька: {:.8f} BTC\n'.format(balance_btc)
-
-    def check_workers(self):
-        logging.info('check_workers')
-        params = {
-            'method': 'stats.provider.workers',
-            'addr': self.wallet
-        }
-        data = get_json(params)
-        if data:
-            if 'result' in data and data['result']['workers']:
-                try:
-                    for alg in data['result']['workers']:
-                        algorithm_id = alg[-1]
-                        algorithm_speed_history = self.speed.get(algorithm_id, [])
-                        if len(algorithm_speed_history) >= self.ETH_SPEED_HISTORY_LENGTH:
-                            algorithm_speed_history.pop(0)
-                        algorithm_speed_history.append(alg[1]['a'])
-                        self.speed[algorithm_id] = algorithm_speed_history
-                    # self.speed.append(data['result']['workers'][0][1]['a'])
-                    # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
-                    #     self.speed.pop(0)
-                except (KeyError, IndexError) as e:
-                    logging.warning('Ошибка получения скорости рига: {}'.format(e))
-                if not self.workers_status:
-                    self.notification_text += 'Статус воркеров: Все воркеры работают\n'
-                    self.send_notification()
-                self.workers_status = True
-                self.workers_status_errors_count = 0
-            else:
-                for alg in self.speed.keys():
-                    if len(self.speed[alg]) >= self.ETH_SPEED_HISTORY_LENGTH:
-                        self.speed[alg].pop(0)
-                    self.speed[alg].append(0)
-                # self.speed.append('0')
-                # if len(self.speed) >= self.ETH_SPEED_HISTORY_LENGTH:
-                #     self.speed.pop(0)
-                if self.workers_status_errors_count < self.REQUESTS_NUMBER_FOR_WORKERS_ERROR - 1:
-                    self.workers_status_errors_count += 1
-                else:
-                    if self.workers_status:
-                        self.notification_text += 'Статус воркеров: Воркеры остановлены\n'
-                        self.send_notification()
-                    self.workers_status = False
+        s = requests.Session()
+        if body:
+            body_json = json.dumps(body)
+            response = s.request(method, url, data=body_json)
         else:
-            logging.warning('Ошибка получения ответа о воркерах от сервера. data = {}'.format(data))
+            response = s.request(method, url)
 
-    def check_new_payments(self):
-        logging.info('check_payments')
-        params = {
-            'method': 'stats.provider',
-            'addr': self.wallet
-        }
-        data = get_json(params)
-        if data:
-            if self.payments != data['result']['payments']:
-                concurrency = get_concurrency()
-                self.payments = data['result']['payments']
-                last_payment_date = get_localtime(self.payments[0]['time'])
-                if concurrency:
-                    currency_name = 'RUB'
-                    text_new_payment = 'Произведена новая выплата на кошелек: {:.2f} RUB ({:.8f} BTC) от {}\n'
-                    text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.2f} {}\n'
-                    last_payment_btc = float(self.payments[0]['amount'])
-                    last_payment_rub = last_payment_btc * concurrency
-                    self.notification_text += text_new_payment.format(last_payment_rub,
-                                                                      last_payment_btc,
-                                                                      last_payment_date)
-                else:
-                    concurrency = 1
-                    currency_name = 'BTC'
-                    text_new_payment = 'Произведена новая выплата на кошелек: {:.8f} BTC от {}\n'
-                    text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.8f} {}\n'
-                    last_payment_btc = float(self.payments[0]['amount'])
-                    self.notification_text += text_new_payment.format(last_payment_btc,
-                                                                      last_payment_date)
-                unpaid_balance = sum([float(b['balance'])
-                                      for b in
-                                      data['result']['stats']]) * concurrency
-                self.notification_text += text_unpaid_balance.format(unpaid_balance,
-                                                                     currency_name)
-                self.get_balance()
-                self.send_notification()
-
-    def get_last_payment(self):
-        logging.info('get_last_payment')
-        params = {
-            'method': 'stats.provider',
-            'addr': self.wallet
-        }
-        data = get_json(params)
-        if data:
-            concurrency = get_concurrency()
-            if concurrency:
-                currency_name = 'RUB'
-                text_last_payment = 'Последняя выплата: {:.2f} {} ({:.8f} BTC) от {}\n'
-                text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.2f} {}\n'
-            else:
-                concurrency = 1
-                currency_name = 'BTC'
-                text_last_payment = 'Последняя выплата: {:.8f} {} ({:.8f} BTC) от {}\n'
-                text_unpaid_balance = 'Невыплаченный баланс на текущий момент: {:.8f} {}\n'
-            self.payments = data['result']['payments']
-            last_payment_btc = float(self.payments[0]['amount'])
-            last_payment_rub = last_payment_btc * concurrency
-            last_payment_date = get_localtime(self.payments[0]['time'])
-            self.notification_text += text_last_payment.format(last_payment_rub,
-                                                               currency_name,
-                                                               last_payment_btc,
-                                                               last_payment_date)
-            unpaid_balance = sum([float(b['balance'])
-                                  for b in
-                                  data['result']['stats']]) * concurrency
-            self.notification_text += text_unpaid_balance.format(unpaid_balance,
-                                                                 currency_name)
-
-    def send_notification(self):
-        bot = dispatcher.bot
-        logging.info('Отправка сообщения: {}'.format(self.notification_text))
-        try:
-            bot.send_message(chat_id=telegram_config['my_telegram_id'], text=self.notification_text)
-        except (socket.error, TelegramError) as e:
-            logging.warning('Ошибка отправки сообщения: {}'.format(e))
-        self.notification_text = ''
-
-    def show_speed(self):
-        self.notification_text = 'Скорость рига:\n'
-        for alg, values in self.speed.items():
-            self.notification_text += '{}: {}\n'.format(ALGORITHMS[alg], values)
-        self.send_notification()
-
-    def parse_fl_ru(self):
-        logging.info('Парсинг fl.ru')
-        url = 'https://www.fl.ru/projects/'
-        params = {
-            'action': 'postfilter',
-            'kind': 5,
-            'pf_category': '',
-            'pf_subcategory': '',
-            'comboe_columns[1]': 0,
-            'comboe_columns[0]': 0,
-            'comboe_column_id': 0,
-            'comboe_db_id': 0,
-            'comboe': ' ',
-            'location_columns[1]': 0,
-            'location_columns[0]': 0,
-            'location_column_id': 0,
-            'location_db_id': 0,
-            'location': ' ',
-            'pf_cost_from': '',
-            'currency_text_columns[1]': 0,
-            'currency_text_columns[0]': 2,
-            'currency_text_column_id': 0,
-            'currency_text_db_id': 2,
-            'pf_currency': 2,
-            'currency_text': '',
-            'pf_keywords': 'python'
-        }
-
-        current_projects = {}
-        r = requests.post(url, params)
-        if r.status_code == 200:
-            page = BeautifulSoup(r.text, "html.parser")
-            for post in page.find_all('div', {'class': 'b-post'}):
-                item = post.find('a', {'class': 'b-post__link'})
-                id = item.get('id')
-                name = item.text
-                link = url[:-10] + item.get('href')
-                js = post.find_all('script')  # JS скрипты в объявлении, содержащии цену и описание
-                price = BeautifulSoup(js[0].text[16:-2], "html.parser").find('div', {'class': 'b-post__price'}).text
-                desc = BeautifulSoup(js[1].text[10:-3], "html.parser").find('div', {'class': 'b-post__txt'}).text
-                current_projects[id] = {'name': name, 'link': link, 'price': price, 'desc': desc}
-
-            if self.projects:
-                new_projects = set(current_projects).difference(set(self.projects))
-                if new_projects:
-                    self.notification_text += 'Новые проекты на FL.RU:\n'
-                    for project in new_projects:
-                        self.notification_text += 'Тема: {name}\n' \
-                                                  'Цена: {price}\n' \
-                                                  '{desc}\n{link}\n'.format(**current_projects[project])
-                    self.send_notification()
-            self.projects = current_projects
+        if response.status_code == 200:
+            return response.json()
+        elif response.content:
+            raise Exception(str(response.status_code) + ": " + response.reason + ": " + str(response.content))
         else:
-            logging.info('Ошибка получения новых проектов с FL.RU: {}'.format(r.text))
+            raise Exception(str(response.status_code) + ": " + response.reason)
+
+    def get_current_global_stats(self):
+        return self.request('GET', '/main/api/v2/public/stats/global/current/', '', None)
+
+    def get_global_stats_24(self):
+        return self.request('GET', '/main/api/v2/public/stats/global/24h/', '', None)
+
+    def get_active_orders(self):
+        return self.request('GET', '/main/api/v2/public/orders/active/', '', None)
+
+    def get_active_orders2(self):
+        return self.request('GET', '/main/api/v2/public/orders/active2/', '', None)
+
+    def buy_info(self):
+        return self.request('GET', '/main/api/v2/public/buy/info/', '', None)
+
+    def get_algorithms(self):
+        return self.request('GET', '/main/api/v2/mining/algorithms/', '', None)
+
+    def get_markets(self):
+        return self.request('GET', '/main/api/v2/mining/markets/', '', None)
+
+    def get_currencies(self):
+        return self.request('GET', '/main/api/v2/public/currencies/', '', None)
+
+    def get_multialgo_info(self):
+        return self.request('GET', '/main/api/v2/public/simplemultialgo/info/', '', None)
+
+    def get_exchange_markets_info(self):
+        return self.request('GET', '/exchange/api/v2/info/status', '', None)
+
+    def get_exchange_trades(self, market):
+        return self.request('GET', '/exchange/api/v2/trades', 'market=' + market, None)
+
+    def get_candlesticks(self, market, from_s, to_s, resolution):
+        return self.request('GET', '/exchange/api/v2/candlesticks', "market={}&from={}&to={}&resolution={}".format(market, from_s, to_s, resolution), None)
+
+    def get_exchange_orderbook(self, market, limit):
+        return self.request('GET', '/exchange/api/v2/orderbook', "market={}&limit={}".format(market, limit), None)
+
+class private_api:
+
+    def __init__(self, host, organisation_id, key, secret, verbose=False):
+        self.key = key
+        self.secret = secret
+        self.organisation_id = organisation_id
+        self.host = host
+        self.verbose = verbose
+
+    def request(self, method, path, query, body):
+
+        xtime = self.get_epoch_ms_from_now()
+        xnonce = str(uuid.uuid4())
+
+        message = bytearray(self.key, 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray(str(xtime), 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray(xnonce, 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray(self.organisation_id, 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray(method, 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray(path, 'utf-8')
+        message += bytearray('\x00', 'utf-8')
+        message += bytearray(query, 'utf-8')
+
+        if body:
+            body_json = json.dumps(body)
+            message += bytearray('\x00', 'utf-8')
+            message += bytearray(body_json, 'utf-8')
+
+        digest = hmac.new(bytearray(self.secret, 'utf-8'), message, sha256).hexdigest()
+        xauth = self.key + ":" + digest
+
+        headers = {
+            'X-Time': str(xtime),
+            'X-Nonce': xnonce,
+            'X-Auth': xauth,
+            'Content-Type': 'application/json',
+            'X-Organization-Id': self.organisation_id,
+            'X-Request-Id': str(uuid.uuid4())
+        }
+
+        s = requests.Session()
+        s.headers = headers
+
+        url = self.host + path
+        if query:
+            url += '?' + query
+
+        if self.verbose:
+            print(method, url)
+
+        if body:
+            response = s.request(method, url, data=body_json)
+        else:
+            response = s.request(method, url)
+
+        if response.status_code == 200:
+            return response.json()
+        elif response.content:
+            raise Exception(str(response.status_code) + ": " + response.reason + ": " + str(response.content))
+        else:
+            raise Exception(str(response.status_code) + ": " + response.reason)
+
+    def get_epoch_ms_from_now(self):
+        now = datetime.now()
+        now_ec_since_epoch = mktime(now.timetuple()) + now.microsecond / 1000000.0
+        return int(now_ec_since_epoch * 1000)
+
+    def algo_settings_from_response(self, algorithm, algo_response):
+        algo_setting = None
+        for item in algo_response['miningAlgorithms']:
+            if item['algorithm'] == algorithm:
+                algo_setting = item
+
+        if algo_setting is None:
+            raise Exception('Settings for algorithm not found in algo_response parameter')
+
+        return algo_setting
+
+    def get_accounts(self):
+        return self.request('GET', '/main/api/v2/accounting/accounts/', '', None)
+
+    def get_accounts_for_currency(self, currency):
+        return self.request('GET', '/main/api/v2/accounting/account/' + currency, '', None)
+
+    def get_withdrawal_addresses(self, currency, size, page):
+
+        params = "currency={}&size={}&page={}".format(currency, size, page)
+
+        return self.request('GET', '/main/api/v2/accounting/withdrawalAddresses/', params, None)
+
+    def get_withdrawal_types(self):
+        return self.request('GET', '/main/api/v2/accounting/withdrawalAddresses/types/', '', None)
+
+    def withdraw_request(self, address_id, amount, currency):
+        withdraw_data = {
+            "withdrawalAddressId": address_id,
+            "amount": amount,
+            "currency": currency
+        }
+        return self.request('POST', '/main/api/v2/accounting/withdrawal/', '', withdraw_data)
+
+    def get_my_active_orders(self, algorithm, market, limit):
+
+        ts = self.get_epoch_ms_from_now()
+        params = "algorithm={}&market={}&ts={}&limit={}&op=LT".format(algorithm, market, ts, limit)
+
+        return self.request('GET', '/main/api/v2/hashpower/myOrders', params, None)
+
+    def create_pool(self, name, algorithm, pool_host, pool_port, username, password):
+        pool_data = {
+            "name": name,
+            "algorithm": algorithm,
+            "stratumHostname": pool_host,
+            "stratumPort": pool_port,
+            "username": username,
+            "password": password
+        }
+        return self.request('POST', '/main/api/v2/pool/', '', pool_data)
+
+    def delete_pool(self, pool_id):
+        return self.request('DELETE', '/main/api/v2/pool/' + pool_id, '', None)
+
+    def get_my_pools(self, page, size):
+        return self.request('GET', '/main/api/v2/pools/', '', None)
+
+    def create_hashpower_order(self, market, type, algorithm, price, limit, amount, pool_id, algo_response):
+
+        algo_setting = self.algo_settings_from_response(algorithm, algo_response)
+
+        order_data = {
+            "market": market,
+            "algorithm": algorithm,
+            "amount": amount,
+            "price": price,
+            "limit": limit,
+            "poolId": pool_id,
+            "type": type,
+            "marketFactor": algo_setting['marketFactor'],
+            "displayMarketFactor": algo_setting['displayMarketFactor']
+        }
+        return self.request('POST', '/main/api/v2/hashpower/order/', '', order_data)
+
+    def cancel_hashpower_order(self, order_id):
+        return self.request('DELETE', '/main/api/v2/hashpower/order/' + order_id, '', None)
+
+    def refill_hashpower_order(self, order_id, amount):
+        refill_data = {
+            "amount": amount
+        }
+        return self.request('POST', '/main/api/v2/hashpower/order/' + order_id + '/refill/', '', refill_data)
+
+    def set_price_hashpower_order(self, order_id, price, algorithm, algo_response):
+
+        algo_setting = self.algo_settings_from_response(algorithm, algo_response)
+
+        price_data = {
+            "price": price,
+            "marketFactor": algo_setting['marketFactor'],
+            "displayMarketFactor": algo_setting['displayMarketFactor']
+        }
+        return self.request('POST', '/main/api/v2/hashpower/order/' + order_id + '/updatePriceAndLimit/', '',
+                            price_data)
+
+    def set_limit_hashpower_order(self, order_id, limit, algorithm, algo_response):
+        algo_setting = self.algo_settings_from_response(algorithm, algo_response)
+        limit_data = {
+            "limit": limit,
+            "marketFactor": algo_setting['marketFactor'],
+            "displayMarketFactor": algo_setting['displayMarketFactor']
+        }
+        return self.request('POST', '/main/api/v2/hashpower/order/' + order_id + '/updatePriceAndLimit/', '',
+                            limit_data)
+
+    def set_price_and_limit_hashpower_order(self, order_id, price, limit, algorithm, algo_response):
+        algo_setting = self.algo_settings_from_response(algorithm, algo_response)
+
+        price_data = {
+            "price": price,
+            "limit": limit,
+            "marketFactor": algo_setting['marketFactor'],
+            "displayMarketFactor": algo_setting['displayMarketFactor']
+        }
+        return self.request('POST', '/main/api/v2/hashpower/order/' + order_id + '/updatePriceAndLimit/', '',
+                            price_data)
+
+    def get_my_exchange_orders(self, market):
+        return self.request('GET', '/exchange/api/v2/myOrders', 'market=' + market, None)
+
+    def get_my_exchange_trades(self, market):
+        return self.request('GET','/exchange/api/v2/myTrades', 'market=' + market, None)
+
+    def create_exchange_limit_order(self, market, side, quantity, price):
+        query = "market={}&side={}&type=limit&quantity={}&price={}".format(market, side, quantity, price)
+        return self.request('POST', '/exchange/api/v2/order', query, None)
+
+    def create_exchange_buy_market_order(self, market, quantity):
+        query = "market={}&side=buy&type=market&secQuantity={}".format(market, quantity)
+        return self.request('POST', '/exchange/api/v2/order', query, None)
+
+    def create_exchange_sell_market_order(self, market, quantity):
+        query = "market={}&side=sell&type=market&quantity={}".format(market, quantity)
+        return self.request('POST', '/exchange/api/v2/order', query, None)
+
+    def cancel_exchange_order(self, market, order_id):
+        query = "market={}&orderId={}".format(market, order_id)
+        return self.request('DELETE', '/exchange/api/v2/order', query, None)
 
 
-def main():
-    logging.info('Запуск телеграм-бота')
+if __name__ == "__main__":
+    parser = optparse.OptionParser()
 
-    c = NicehashClient()
+    parser.add_option('-b', '--base_url', dest="base", help="Api base url", default="https://api2.nicehash.com")
+    parser.add_option('-o', '--organization_id', dest="org", help="Organization id")
+    parser.add_option('-k', '--key', dest="key", help="Api key")
+    parser.add_option('-s', '--secret', dest="secret", help="Secret for api key")
+    parser.add_option('-m', '--method', dest="method", help="Method for request", default="GET")
+    parser.add_option('-p', '--path', dest="path", help="Path for request", default="/")
+    parser.add_option('-q', '--params', dest="params", help="Parameters for request")
+    parser.add_option('-d', '--body', dest="body", help="Body for request")
 
-    def stop_and_restart():
-        """Останавливаем бота и перезапускаем процесс"""
-        updater.stop()
-        os.execl(sys.executable, sys.executable, *sys.argv)
+    options, args = parser.parse_args()
 
-    # КОМАНДЫ БОТА
-    def start(bot, update):
-        logging.info('Получена команда /start от chat_id = {}'.format(update.message.chat_id))
-        bot.send_message(chat_id=telegram_config['my_telegram_id'], text="Добрый день, хозяинъ!")
+    private_api = private_api(options.base, options.org, options.key, options.secret)
 
-    def balance(bot, update=None):
-        logging.info('Получена команда /balance')
-        c.get_balance()
-        c.get_last_payment()
-        c.send_notification()
+    params = ''
+    if options.params is not None:
+        params = options.params
 
-    def error(bot, update, error):
-        logging.warning('Update "%s" caused error "%s"' % (update, error))
-        logging.warning('Перезагрузка бота...')
-        Thread(target=stop_and_restart).start()
+    try:
+        response = private_api.request(options.method, options.path, params, options.body)
+    except Exception as ex:
+        print("Unexpected error:", ex)
+        exit(1)
 
-    def speed(bot, update):
-        logging.info('Получена команда /speed')
-        c.show_speed()
-
-    def yobit(bot, update):
-        logging.info('Получена команда /yobit')
-        c.notification_text = api_call(method='getInfo')
-        c.send_notification()
-
-    def sell(bot, update):
-        logging.info('Получена команда /sell')
-        c.notification_text = how_to_sell_my_btc()
-        c.send_notification()
-
-    # ХЕНДЛЕРЫ БОТА
-    start_handler = CommandHandler('start', start)
-    balance_handler = CommandHandler('balance', balance)
-    speed_handler = CommandHandler('speed', speed)
-    yobit_handler = CommandHandler('yobit', yobit)
-    sell_handler = CommandHandler('sell', sell)
-    dispatcher.add_handler(start_handler)
-    dispatcher.add_handler(balance_handler)
-    dispatcher.add_handler(speed_handler)
-    dispatcher.add_handler(yobit_handler)
-    dispatcher.add_handler(sell_handler)
-    # log all errors
-    dispatcher.add_error_handler(error)
-
-    # ЗАПУСК БОТА
-    updater.start_polling()
-    balance(bot=dispatcher.bot)  # Запрос баланса
-    while True:
-        time.sleep(15 * 60)  # Запуск проверок раз в 15 минут
-        c.check_workers()
-        c.check_new_payments()
-        c.parse_fl_ru()
-
-
-if __name__ == '__main__':
-    main()
-
+    print(response)
+    exit(0)
