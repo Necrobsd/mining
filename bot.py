@@ -32,7 +32,8 @@ class NicehashClient:
         self.notification_text = ''
 
     def get_balance(self):
-        balance_btc = private_api.get_accounts_for_currency('BTC')
+        result = private_api.get_accounts_for_currency('BTC')
+        balance_btc = float(result['balance'])
         concurrency = get_concurrency()
         if concurrency:
             balance_rub = balance_btc * concurrency
